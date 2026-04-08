@@ -16,7 +16,7 @@
             margin: 0;
             padding: 10px;
             font-family: system-ui, -apple-system, sans-serif;
-            overflow: hidden; /* Prevents scrolling */
+            overflow: hidden;
         }
         .glass-container {
             background: rgba(255, 255, 255, 0.1);
@@ -30,7 +30,6 @@
             max-width: 400px;
             z-index: 10;
         }
-        /* Navigation buttons are now completely identical and static */
         .nav-btn {
             position: fixed;
             top: 0;
@@ -39,9 +38,9 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: rgba(0, 0, 0, 0.2); /* Fixed neutral background */
+            background: rgba(0, 0, 0, 0.2);
             backdrop-filter: blur(4px);
-            color: #ffffff; /* Fixed white icon color */
+            color: #ffffff;
             transition: background 0.2s ease;
             cursor: pointer;
             border: none;
@@ -74,7 +73,6 @@
 </head>
 <body>
 
-    <!-- Identical Navigation Buttons -->
     <button onclick="changeColor(-1)" class="nav-btn left" aria-label="Previous">
         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
     </button>
@@ -83,20 +81,16 @@
     </button>
 
     <div class="glass-container">
-        <!-- Search at Top -->
-        <input type="text" id="search-box" class="search-input" placeholder="Search name, Hex or RGB..." oninput="handleSearch()">
+        <input type="text" id="search-box" class="search-input" placeholder="Name, Hex, RGB, or ACI (1-255)..." oninput="handleSearch()">
 
-        <!-- Color Name or Hex Primary -->
         <div id="color-display" class="text-5xl font-black tracking-tighter uppercase leading-tight mb-1">
             #000000
         </div>
         
-        <!-- Secondary Info (Hex if Name is showing) -->
         <div id="secondary-display" class="text-xs font-mono opacity-60 mb-2">
             HEX: #000000
         </div>
 
-        <!-- RGB always at bottom -->
         <div id="rgb-value" class="text-sm font-mono opacity-70 tracking-widest">
             rgb(0, 0, 0)
         </div>
@@ -106,7 +100,44 @@
         const TOTAL_COLORS = 16777216;
         let currentIndex = 0;
 
-        // Standard CSS Color Names Mapping
+        // Complete AutoCAD Color Index (ACI) Mapping
+        const aciMap = {};
+        
+        // 1-9: Primary
+        const primaryACI = [null, "#FF0000", "#FFFF00", "#00FF00", "#00FFFF", "#0000FF", "#FF00FF", "#FFFFFF", "#808080", "#C0C0C0"];
+        primaryACI.forEach((hex, i) => { if (hex) aciMap[i] = hex; });
+
+        // 10-249: Chromatic (Spectrum)
+        // AutoCAD uses 24 hues, 5 saturations, 2 brightnesses
+        const hues = [0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180, 195, 210, 225, 240, 255, 270, 285, 300, 315, 330, 345];
+        let aciIdx = 10;
+        for (let hue of hues) {
+            // ACI hue blocks have 10 colors each (alternate brightness and saturation)
+            const steps = [
+                { s: 100, v: 100 }, { s: 50, v: 100 }, 
+                { s: 100, v: 65 },  { s: 50, v: 65 },
+                { s: 100, v: 50 },  { s: 50, v: 50 },
+                { s: 100, v: 30 },  { s: 50, v: 30 },
+                { s: 100, v: 15 },  { s: 50, v: 15 }
+            ];
+            steps.forEach(step => {
+                aciMap[aciIdx++] = hsvToHex(hue, step.s, step.v);
+            });
+        }
+
+        // 250-255: Grayscale
+        const grays = ["#333333", "#505050", "#696969", "#828282", "#BEBEBE", "#FFFFFF"];
+        grays.forEach((hex, i) => { aciMap[250 + i] = hex; });
+
+        function hsvToHex(h, s, v) {
+            s /= 100; v /= 100;
+            const f = (n, k = (n + h / 60) % 6) => v - v * s * Math.max(Math.min(k, 4 - k, 1), 0);
+            const r = Math.round(f(5) * 255);
+            const g = Math.round(f(3) * 255);
+            const b = Math.round(f(1) * 255);
+            return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+        }
+
         const colorNames = {
             "#F0F8FF": "AliceBlue", "#FAEBD7": "AntiqueWhite", "#00FFFF": "Aqua", "#7FFFD4": "Aquamarine", "#F0FFFF": "Azure",
             "#F5F5DC": "Beige", "#FFE4C4": "Bisque", "#000000": "Black", "#FFEBCD": "BlanchedAlmond", "#0000FF": "Blue",
@@ -156,6 +187,7 @@
             if (!query) return;
 
             let newIndex = -1;
+
             if (query.startsWith('#')) {
                 const hexPart = query.slice(1);
                 if (hexPart.length === 3) {
@@ -168,6 +200,15 @@
                 const parts = query.replace(/[rgb\(\)]/g, '').split(',').map(p => parseInt(p.trim()));
                 if (parts.length === 3 && parts.every(p => !isNaN(p) && p >= 0 && p <= 255)) {
                     newIndex = (parts[0] << 16) | (parts[1] << 8) | parts[2];
+                }
+            } else if (/^\d+$/.test(query)) {
+                const num = parseInt(query, 10);
+                // AutoCAD ACI (1-255)
+                if (num >= 1 && num <= 255) {
+                    const hex = aciMap[num];
+                    if (hex) newIndex = parseInt(hex.slice(1), 16);
+                } else if (num >= 0 && num < TOTAL_COLORS) {
+                    newIndex = num;
                 }
             } else {
                 const namedIdx = nameToHex(query);
@@ -192,19 +233,29 @@
             const hex = "#" + currentIndex.toString(16).padStart(6, '0').toUpperCase();
             const rgbStr = `rgb(${r}, ${g}, ${b})`;
             
-            // UI elements
             const displayEl = document.getElementById('color-display');
             const secondaryEl = document.getElementById('secondary-display');
             const rgbEl = document.getElementById('rgb-value');
             const card = document.querySelector('.glass-container');
             const input = document.getElementById('search-box');
 
-            // Apply background
             document.body.style.backgroundColor = hex;
 
-            // Handle Name vs Hex display
+            // Search for current ACI
+            let aciNum = null;
+            for (let key in aciMap) {
+                if (aciMap[key].toUpperCase() === hex) {
+                    aciNum = key;
+                    break;
+                }
+            }
+
             const colorName = colorNames[hex];
-            if (colorName) {
+            if (aciNum) {
+                displayEl.textContent = `ACI: ${aciNum}`;
+                secondaryEl.textContent = colorName ? `${colorName} (${hex})` : `HEX: ${hex}`;
+                secondaryEl.style.display = 'block';
+            } else if (colorName) {
                 displayEl.textContent = colorName;
                 secondaryEl.textContent = `HEX: ${hex}`;
                 secondaryEl.style.display = 'block';
@@ -216,7 +267,6 @@
             rgbEl.textContent = rgbStr;
             if (clearSearch) input.value = '';
 
-            // Dynamic Contrast for central content
             const brightness = (r * 299 + g * 587 + b * 114) / 1000;
             const isLight = brightness > 155;
             const textColor = isLight ? '#000000' : '#ffffff';
@@ -234,7 +284,6 @@
             updateDisplay();
         }
 
-        // Keyboard navigation
         document.addEventListener('keydown', (e) => {
             if (document.activeElement.id === 'search-box') return;
             if (e.key === "ArrowRight") changeColor(1);
